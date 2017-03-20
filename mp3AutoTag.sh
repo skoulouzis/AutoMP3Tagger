@@ -28,10 +28,10 @@ urldecode() {
 
 
 IFS=$'\n'
-MUSIC=/media/$USER/zapp/music/Ramones
+MUSIC=/media/$USER/zapp/music/Ramones/
+
 
 for f in $(find $MUSIC -type f); do
-    echo $f
     title=`ffprobe -loglevel error -show_entries format_tags=title -of default=noprint_wrappers=1:nokey=1 $f`
     artist=`ffprobe -loglevel error -show_entries format_tags=artist -of default=noprint_wrappers=1:nokey=1 $f`
     info=$artist" "$title
@@ -50,22 +50,35 @@ for f in $(find $MUSIC -type f); do
         k=`jq keys[] pages.json`
         extract=`jq .$k.extract pages.json | tr '[:upper:]' '[:lower:]'`
         if [[ $extract == *"song"* ]]; then
-            rm pages.json
-            curl "https://en.wikipedia.org/?curid=$pageID" > $pageID.html
-            genre=`w3m $pageID.html -dump -T text/html | grep  "Genre.*" | sed 's/Genre//' |  sed ':a;N;$!ba;s/\n/,/g'  | tr -d '^[1]' |  tr -d '•' | tr '[:upper:]' '[:lower:]'`
-            echo $genre
-            if [ -n "$genre" ]; then
-                IFS=, read -r -a array <<<$genre
-                echo $info ":"
-                genre=""
-                for i in "${array[@]}"
-                do
-                    genre+=`echo $i | awk '{$1=$1};1'`"/"
-                done
-                genre=`echo "${genre::-1}"`
-                echo $genre
-                mid3v2 --genre="$genre" $f
+            curl "https://en.wikipedia.org/?curid=$pageID" | hxnormalize -x > $pageID.html
+            xpath -e '//tr[position()>1]' $pageID.html 2> /dev/null | sed -e 's/<\/*tr>//g' -e 's/<td>//g' -e 's/<\/td>/ /g' | awk 'NF' > $pageID.out
+            rm $pageID.html
+            if grep -q "Music genre" "$pageID.out"; then
+            genre=""
+                while read p; do
+                    if [[ $p == *"<th scope=\""* ]] && [ "$startLooking" = true ]; then
+                        startLooking=false
+                        break
+                    fi
+                    if [[ $p == *"title=\"Music genre\""* ]]; then
+                        genre=""
+                        startLooking=true
+                    fi
+                    if [[ $p == *"title=\""* ]] && [ "$startLooking" = true ] && [[ $p != *"Music genre"* ]]; then
+                        genre+=`echo $p | grep -o -P '(?<=title\=\")(.*?)(?=\")'`"/"
+                    fi
+                done < $pageID.out
+                    
+                if [ -n "$genre" ]; then
+                    genre=`echo "${genre::-1}"`
+                    echo $f
+                    echo $genre
+                    mid3v2 --genre="$genre" $f
+                fi
             fi
         fi
     fi
+    rm *.json
 done
+
+rm *.out
