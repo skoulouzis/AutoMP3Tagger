@@ -1,5 +1,7 @@
  #!/bin/bash
 
+ 
+ 
 urlencode() {
     # urlencode <string>
     old_lc_collate=$LC_COLLATE
@@ -26,7 +28,7 @@ urldecode() {
 
 
 IFS=$'\n'
-MUSIC=$HOME/Music/
+MUSIC=/media/$USER/zapp/music/Ramones
 
 for f in $(find $MUSIC -type f); do
     echo $f
@@ -43,25 +45,27 @@ for f in $(find $MUSIC -type f); do
         encoded=`urlencode $title`
 #         echo "https://en.wikipedia.org/w/api.php?format=json&redirects&action=query&prop=extracts&exlimit=max&explaintext&exintro&titles=$encoded"
         curl "https://en.wikipedia.org/w/api.php?format=json&redirects&action=query&prop=extracts&exlimit=max&explaintext&exintro&titles=$encoded" | jq .query.pages > pages.json
-        #     cat pages.json
         arr=( $(jq 'keys[]' pages.json) )
         pageID=`sed -e 's/^"//' -e 's/"$//' <<<"${arr[0]}"`
-        rm pages.json
-        curl "https://en.wikipedia.org/?curid=$pageID" > $pageID.html
-        genre=`w3m $pageID.html -dump -T text/html | grep  "Genre.*" | sed 's/Genre//' |  sed ':a;N;$!ba;s/\n/,/g'  | tr -d '^[1]' |  tr -d '•' | tr '[:upper:]' '[:lower:]'`
-        IFS=, read -r -a array <<<$genre
-#         sorted=($(echo "${array[@]}" | tr ' ' '\n' | sort -u | tr '\n' ' '))
-#         IFS=, read -r -a array <<<$sorted
-        echo $info ":"
-        genre=""
-        for i in "${array[@]}"
-        do
-            genre+=`echo $i | awk '{$1=$1};1'`"/"
-        done
-        genre=`echo "${genre::-1}"`
-        echo $genre
-        mid3v2 --genre="$genre" $f
-
+        k=`jq keys[] pages.json`
+        extract=`jq .$k.extract pages.json | tr '[:upper:]' '[:lower:]'`
+        if [[ $extract == *"song"* ]]; then
+            rm pages.json
+            curl "https://en.wikipedia.org/?curid=$pageID" > $pageID.html
+            genre=`w3m $pageID.html -dump -T text/html | grep  "Genre.*" | sed 's/Genre//' |  sed ':a;N;$!ba;s/\n/,/g'  | tr -d '^[1]' |  tr -d '•' | tr '[:upper:]' '[:lower:]'`
+            echo $genre
+            if [ -n "$genre" ]; then
+                IFS=, read -r -a array <<<$genre
+                echo $info ":"
+                genre=""
+                for i in "${array[@]}"
+                do
+                    genre+=`echo $i | awk '{$1=$1};1'`"/"
+                done
+                genre=`echo "${genre::-1}"`
+                echo $genre
+                mid3v2 --genre="$genre" $f
+            fi
+        fi
     fi
-    rm $pageID.html
 done
